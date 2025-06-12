@@ -6,13 +6,13 @@
 
 time_t 
 
-char ssid[] = "Xiaomi 11 Lite 5G NE"; // my network SSID (name)
-char pass[] = "12345678989"; // my network password
+char ssid[] = "XXX"; // my network SSID (name)
+char pass[] = "XXX"; // my network password
 WiFiClientSecure client;
 
 // Telegram bot details
-const char* botToken = "8088373096:AAH_cFQ-VFh7dwZxn_f1-PkVSyPifZHJqc0";
-const char* chatID = "229689368";
+const char* botToken = "XXX";
+const char* chatID = "XXX";
 
 UniversalTelegramBot bot(botToken, client);
 
