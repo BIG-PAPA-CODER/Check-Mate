@@ -163,28 +163,154 @@ void setup() {
  
 }
 
+int count = 0;
+const int detectionThreshold = 800; // mm or tune this based on your environment
+
+enum SensorState {
+  IDLE,
+  FIRST_TRIGGERED,
+  SECOND_TRIGGERED
+};
+
+SensorState state = IDLE;
+
 void loop() {
-  int vl1, vl2;
+  // int vl1, vl2;
   
+  // read_dual_sensors(&vl1, &vl2);
+  
+  // // Serial.println(vl1);
+  // // Serial.println(vl2);
+
+  // unsigned long now = millis();
+  // if (now - lastSent > interval) {
+  //   lastSent = now;
+
+  //   String msg;
+  //   if (vl1 > 0 && vl2 > 0) {
+  //     msg = "First VL53L0X distance: " + String(vl1) + " mm || " + "Second VL53L0X distance: " + String(vl2) + " mm.\n Time:" + ;
+  //   } else {
+  //     msg = "Sensor out of range";
+  //   }
+
+  //   sendTelegramMessage(msg);
+  //   Serial.println("Message sent: " + msg);
+  // }
+
+  // delay(100);
+
+  int vl1 = 8190, vl2 = 8190; // default to max distance if no reading
   read_dual_sensors(&vl1, &vl2);
-  
-  // Serial.println(vl1);
-  // Serial.println(vl2);
 
-  unsigned long now = millis();
-  if (now - lastSent > interval) {
-    lastSent = now;
+  bool sensor1_detected = vl1 < detectionThreshold;
+  bool sensor2_detected = vl2 < detectionThreshold;
 
-    String msg;
-    if (vl1 > 0 && vl2 > 0) {
-      msg = "First VL53L0X distance: " + String(vl1) + " mm || " + "Second VL53L0X distance: " + String(vl2) + " mm.\n Time:" + ;
-    } else {
-      msg = "Sensor out of range";
-    }
+  switch (state) {
+    case IDLE:
+      if (sensor1_detected && !sensor2_detected) {
+        state = FIRST_TRIGGERED;
+      } else if (sensor2_detected && !sensor1_detected) {
+        state = SECOND_TRIGGERED;
+      }
+      break;
 
-    sendTelegramMessage(msg);
-    Serial.println("Message sent: " + msg);
+    case FIRST_TRIGGERED:
+      if (sensor2_detected) {
+        count++;
+        Serial.println("Object passed -> Count: " + String(count));
+        sendTelegramMessage("Object passed -> Count: " + String(count));
+        state = IDLE;
+      } else if (!sensor1_detected) {
+        state = IDLE; // reset if object left sensor1 but didn't trigger sensor2
+      }
+      break;
+
+    case SECOND_TRIGGERED:
+      if (sensor1_detected) {
+        count--;
+        Serial.println("Object returned <- Count: " + String(count));
+        sendTelegramMessage("Object returned <- Count: " + String(count));
+        state = IDLE;
+      } else if (!sensor2_detected) {
+        state = IDLE;
+      }
+      break;
   }
 
-  delay(100);
+  delay(10);
+}int count = 0;
+const int detectionThreshold = 800; // mm or tune this based on your environment
+
+enum SensorState {
+  IDLE,
+  FIRST_TRIGGERED,
+  SECOND_TRIGGERED
+};
+
+SensorState state = IDLE;
+
+void loop() {
+  // int vl1, vl2;
+  
+  // read_dual_sensors(&vl1, &vl2);
+  
+  // // Serial.println(vl1);
+  // // Serial.println(vl2);
+
+  // unsigned long now = millis();
+  // if (now - lastSent > interval) {
+  //   lastSent = now;
+
+  //   String msg;
+  //   if (vl1 > 0 && vl2 > 0) {
+  //     msg = "First VL53L0X distance: " + String(vl1) + " mm || " + "Second VL53L0X distance: " + String(vl2) + " mm.\n Time:" + ;
+  //   } else {
+  //     msg = "Sensor out of range";
+  //   }
+
+  //   sendTelegramMessage(msg);
+  //   Serial.println("Message sent: " + msg);
+  // }
+
+  // delay(100);
+
+  int vl1 = 8190, vl2 = 8190; // default to max distance if no reading
+  read_dual_sensors(&vl1, &vl2);
+
+  bool sensor1_detected = vl1 < detectionThreshold;
+  bool sensor2_detected = vl2 < detectionThreshold;
+
+  switch (state) {
+    case IDLE:
+      if (sensor1_detected && !sensor2_detected) {
+        state = FIRST_TRIGGERED;
+      } else if (sensor2_detected && !sensor1_detected) {
+        state = SECOND_TRIGGERED;
+      }
+      break;
+
+    case FIRST_TRIGGERED:
+      if (sensor2_detected) {
+        count++;
+        Serial.println("Object passed -> Count: " + String(count));
+        sendTelegramMessage("Object passed -> Count: " + String(count));
+        state = IDLE;
+      } else if (!sensor1_detected) {
+        state = IDLE; // reset if object left sensor1 but didn't trigger sensor2
+      }
+      break;
+
+    case SECOND_TRIGGERED:
+      if (sensor1_detected) {
+        count--;
+        Serial.println("Object returned <- Count: " + String(count));
+        sendTelegramMessage("Object returned <- Count: " + String(count));
+        state = IDLE;
+      } else if (!sensor2_detected) {
+        state = IDLE;
+      }
+      break;
+  }
+
+  delay(10);
 }
