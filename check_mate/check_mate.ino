@@ -3,16 +3,17 @@
 #include <WiFi.h>
 #include <UniversalTelegramBot.h>
 #include <time.h>
+#include <algorithm>
 
-time_t 
 
-char ssid[] = "XXX"; // my network SSID (name)
-char pass[] = "XXX"; // my network password
+
+char ssid[] = "Xiaomi 11 Lite 5G NE"; // my network SSID (name)
+char pass[] = "12345678989"; // my network password
 WiFiClientSecure client;
 
 // Telegram bot details
-const char* botToken = "XXX";
-const char* chatID = "XXX";
+const char* botToken = "8088373096:AAFEH8Xja8t6f9k_VhzaXDWLmoi2J7_dAwA";
+const char* chatID = "229689368";
 
 UniversalTelegramBot bot(botToken, client);
 
@@ -29,6 +30,10 @@ UniversalTelegramBot bot(botToken, client);
 
 unsigned long lastSent = 0;
 const unsigned long interval = 10000; // 10 seconds
+
+bool measurementActive = false;
+unsigned long lastTelegramCheck = 0;
+const unsigned long telegramInterval = 10000; // co 3 sekundy
 
 void sendTelegramMessage(String message) {
   // if (!client.connect("api.telegram.org", 443)) {
@@ -105,26 +110,26 @@ void read_dual_sensors(int* val_1, int* val_2) {
   lox2.rangingTest(&measure2, false); // pass in 'true' to get debug data printout!
 
   // print sensor one reading
-  Serial.print(F("1: "));
+  //Serial.print(F("1: "));
   if(measure1.RangeStatus != 4) {     // if not out of range
-    Serial.print(measure1.RangeMilliMeter);
+    //Serial.print(measure1.RangeMilliMeter);
     *val_1 = measure1.RangeMilliMeter;
   } else {
-    Serial.print(F("Out of range"));
+    //Serial.print(F("Out of range"));
   }
   
   Serial.print(F(" "));
 
   // print sensor two reading
-  Serial.print(F("2: "));
+  //Serial.print(F("2: "));
   if(measure2.RangeStatus != 4) {
-    Serial.print(measure2.RangeMilliMeter);
+    //Serial.print(measure2.RangeMilliMeter);
     *val_2 = measure2.RangeMilliMeter;
   } else {
-    Serial.print(F("Out of range"));
+    //Serial.print(F("Out of range"));
   }
   
-  Serial.println();
+  //Serial.println();
 }
 
 void setup() {
@@ -136,16 +141,17 @@ void setup() {
   int status = WiFi.begin(ssid, pass);
   while (WiFi.status() != WL_CONNECTED) 
   {
-    Serial.println("Trying to connect");
+    sendTelegramMessage("Connecting...");
     delay(1000);
   }
   Serial.println("Connected");
+  sendTelegramMessage("Connection established");
   delay(3000);
 
   Wire.begin(SDA_PIN, SCL_PIN);
   Wire.setClock(100000);
   // wait until serial port opens for native USB devices
-  while (! Serial) { delay(1); }
+  //while (! Serial) { delay(1); }
 
   pinMode(SHT_LOX1, OUTPUT);
   pinMode(SHT_LOX2, OUTPUT);
@@ -160,7 +166,23 @@ void setup() {
   
   Serial.println(F("Starting..."));
   setID();
- 
+}
+
+#define MEDIAN_SIZE 5
+
+int buffer1[MEDIAN_SIZE] = {0};
+int buffer2[MEDIAN_SIZE] = {0};
+
+int medianFilter(int newValue, int* buffer) {
+  static int count = 0;
+  buffer[count % MEDIAN_SIZE] = newValue;
+  count++;
+
+  int temp[MEDIAN_SIZE];
+  memcpy(temp, buffer, sizeof(temp));
+  std::sort(temp, temp + MEDIAN_SIZE);
+
+  return temp[MEDIAN_SIZE / 2];
 }
 
 int count = 0;
@@ -174,6 +196,44 @@ enum SensorState {
 
 SensorState state = IDLE;
 
+void checkTelegramCommands() {
+  int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+
+  while (numNewMessages) {
+    for (int i = 0; i < numNewMessages; i++) {
+      String text = bot.messages[i].text;
+      String from = bot.messages[i].from_id;
+      Serial.println("Received command: " + text);
+
+      if (from != chatID) {
+        bot.sendMessage(from, "🚫 You have no access.");
+        continue;
+      }
+
+      if (text == "/start") {
+        measurementActive = true;
+        bot.sendMessage(chatID, "🟢 Measurement started", "");
+      } else if (text == "/stop") {
+        measurementActive = false;
+        bot.sendMessage(chatID, "🔴 Measurement stopped", "");
+      } else if (text == "/reset") {
+        count = 0;
+        bot.sendMessage(chatID, "🔄 Counter reset to 0", "");
+      } else if (text == "/help") {
+        bot.sendMessage(chatID,
+          "/start - Start measurements\n"
+          "/stop - Stop measurements\n"
+          "/reset - Reset counter\n"
+          "/help - Show help", "");
+      } else {
+        bot.sendMessage(chatID, "❓ Unknown command", "");
+      }
+    }
+
+    numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+  }
+}
+
 void loop() {
   // int vl1, vl2;
   
@@ -199,11 +259,26 @@ void loop() {
 
   // delay(100);
 
+  // checkTelegramCommands(); //checking if there is any messages
+
+  if (millis() - lastTelegramCheck > telegramInterval) {
+    checkTelegramCommands();
+    lastTelegramCheck = millis();
+  }
+
+  if (!measurementActive) {
+    delay(1000); // resting if measurement is off
+    return;
+  }
+
   int vl1 = 8190, vl2 = 8190; // default to max distance if no reading
   read_dual_sensors(&vl1, &vl2);
+  int filteredVl1 = medianFilter(vl1, buffer1);
+  int filteredVl2 = medianFilter(vl2, buffer2);
+  Serial.println("1: " + String(filteredVl1) + "      2: " + String(filteredVl2));
 
-  bool sensor1_detected = vl1 < detectionThreshold;
-  bool sensor2_detected = vl2 < detectionThreshold;
+  bool sensor1_detected = filteredVl1 < detectionThreshold;
+  bool sensor2_detected = filteredVl2 < detectionThreshold;
 
   switch (state) {
     case IDLE:
@@ -237,80 +312,5 @@ void loop() {
       break;
   }
 
-  delay(10);
-}int count = 0;
-const int detectionThreshold = 800; // mm or tune this based on your environment
-
-enum SensorState {
-  IDLE,
-  FIRST_TRIGGERED,
-  SECOND_TRIGGERED
-};
-
-SensorState state = IDLE;
-
-void loop() {
-  // int vl1, vl2;
-  
-  // read_dual_sensors(&vl1, &vl2);
-  
-  // // Serial.println(vl1);
-  // // Serial.println(vl2);
-
-  // unsigned long now = millis();
-  // if (now - lastSent > interval) {
-  //   lastSent = now;
-
-  //   String msg;
-  //   if (vl1 > 0 && vl2 > 0) {
-  //     msg = "First VL53L0X distance: " + String(vl1) + " mm || " + "Second VL53L0X distance: " + String(vl2) + " mm.\n Time:" + ;
-  //   } else {
-  //     msg = "Sensor out of range";
-  //   }
-
-  //   sendTelegramMessage(msg);
-  //   Serial.println("Message sent: " + msg);
-  // }
-
-  // delay(100);
-
-  int vl1 = 8190, vl2 = 8190; // default to max distance if no reading
-  read_dual_sensors(&vl1, &vl2);
-
-  bool sensor1_detected = vl1 < detectionThreshold;
-  bool sensor2_detected = vl2 < detectionThreshold;
-
-  switch (state) {
-    case IDLE:
-      if (sensor1_detected && !sensor2_detected) {
-        state = FIRST_TRIGGERED;
-      } else if (sensor2_detected && !sensor1_detected) {
-        state = SECOND_TRIGGERED;
-      }
-      break;
-
-    case FIRST_TRIGGERED:
-      if (sensor2_detected) {
-        count++;
-        Serial.println("Object passed -> Count: " + String(count));
-        sendTelegramMessage("Object passed -> Count: " + String(count));
-        state = IDLE;
-      } else if (!sensor1_detected) {
-        state = IDLE; // reset if object left sensor1 but didn't trigger sensor2
-      }
-      break;
-
-    case SECOND_TRIGGERED:
-      if (sensor1_detected) {
-        count--;
-        Serial.println("Object returned <- Count: " + String(count));
-        sendTelegramMessage("Object returned <- Count: " + String(count));
-        state = IDLE;
-      } else if (!sensor2_detected) {
-        state = IDLE;
-      }
-      break;
-  }
-
-  delay(10);
+  delay(1);
 }
